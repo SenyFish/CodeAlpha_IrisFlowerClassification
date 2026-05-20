@@ -64,4 +64,4 @@ This project demonstrates the fundamentals of Machine Learning classification us
 ---
 
 ## Author
-Nandana Vinoth Kumar
+Nandana Vinothkumar
