@@ -1,4 +1,7 @@
 from pathlib import Path
+import os
+import shutil
+import subprocess
 
 import graphviz
 import matplotlib.pyplot as plt
@@ -13,6 +16,7 @@ from sklearn.tree import DecisionTreeClassifier, export_graphviz
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "outputs"
 CSV_PATH = BASE_DIR / "Iris.csv"
+GRAPHVIZ_INSTALL_SCRIPT = BASE_DIR / "scripts" / "install_graphviz.ps1"
 
 FEATURE_NAMES = [
     "sepal_length",
@@ -24,6 +28,129 @@ FEATURE_NAMES = [
 
 def ensure_output_dir():
     OUTPUT_DIR.mkdir(exist_ok=True)
+
+
+def refresh_process_path():
+    if os.name != "nt":
+        return
+    try:
+        completed = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                "[Environment]::GetEnvironmentVariable('Path','Machine');"
+                "[Environment]::GetEnvironmentVariable('Path','User')",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+        )
+        refreshed_entries = [
+            entry
+            for line in completed.stdout.splitlines()
+            for entry in line.split(";")
+            if entry.strip()
+        ]
+        current_entries = [entry for entry in os.environ.get("PATH", "").split(os.pathsep) if entry]
+        common_graphviz_bins = [
+            r"C:\Program Files\Graphviz\bin",
+            r"C:\Program Files (x86)\Graphviz\bin",
+            str(Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Graphviz" / "bin"),
+            r"E:\Graphviz\bin",
+        ]
+        merged = []
+        seen = set()
+        for entry in common_graphviz_bins + refreshed_entries + current_entries:
+            normalized = entry.rstrip("\\/")
+            normalized_key = normalized.lower()
+            if normalized and normalized_key not in seen:
+                merged.append(normalized)
+                seen.add(normalized_key)
+        os.environ["PATH"] = os.pathsep.join(merged)
+    except Exception:
+        return
+
+
+def find_dot_candidates():
+    candidates = []
+    path_dot = shutil.which("dot")
+    if path_dot:
+        candidates.append(Path(path_dot))
+    if os.name == "nt":
+        candidates.extend(
+            [
+                Path(r"C:\Program Files\Graphviz\bin\dot.exe"),
+                Path(r"C:\Program Files (x86)\Graphviz\bin\dot.exe"),
+                Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Graphviz" / "bin" / "dot.exe",
+                Path(r"E:\Graphviz\bin\dot.exe"),
+                Path(r"C:\ProgramData\chocolatey\bin\dot.exe"),
+            ]
+        )
+    return candidates
+
+
+def get_dot_path():
+    refresh_process_path()
+    for dot_path in find_dot_candidates():
+        if not dot_path.exists():
+            continue
+        try:
+            subprocess.run(
+                [str(dot_path), "-V"],
+                check=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="ignore",
+            )
+            graphviz_bin = str(dot_path.parent)
+            if graphviz_bin not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = graphviz_bin + os.pathsep + os.environ.get("PATH", "")
+            return str(dot_path)
+        except Exception:
+            continue
+    return None
+
+
+def install_graphviz():
+    if os.name != "nt":
+        raise RuntimeError("未检测到 Graphviz，请先在本机安装 Graphviz 并确保 dot 命令可用。")
+    if not GRAPHVIZ_INSTALL_SCRIPT.exists():
+        raise FileNotFoundError(f"未找到 Graphviz 安装脚本: {GRAPHVIZ_INSTALL_SCRIPT}")
+
+    print("未检测到 Graphviz，正在自动安装并添加到环境变量...")
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(GRAPHVIZ_INSTALL_SCRIPT),
+            "-PathScope",
+            "User",
+        ],
+        cwd=BASE_DIR,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(f"Graphviz 自动安装失败，退出码: {completed.returncode}")
+
+
+def ensure_graphviz_available():
+    dot_path = get_dot_path()
+    if dot_path:
+        print(f"已检测到 Graphviz: {dot_path}")
+        return
+
+    install_graphviz()
+    dot_path = get_dot_path()
+    if not dot_path:
+        raise RuntimeError("Graphviz 已尝试安装，但当前程序仍无法找到 dot 命令。")
+    print(f"Graphviz 安装并检测成功: {dot_path}")
 
 
 def load_and_export_data():
@@ -239,6 +366,7 @@ def show_menu():
 
 def main():
     try:
+        ensure_graphviz_available()
         iris, df, models, results, x_test, y_test = prepare_system()
         while True:
             show_menu()

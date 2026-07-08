@@ -25,7 +25,20 @@
 - matplotlib
 - graphviz
 
-本机还需要安装 Graphviz 程序，并确保 `dot` 命令可用。
+主程序启动时会先检测本机是否存在 Graphviz 的 `dot` 命令；如果没有检测到，会自动调用 `scripts/install_graphviz.ps1` 安装 Graphviz，并添加到用户环境变量 `PATH`。
+
+如需单独安装 Graphviz，也可以运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install_graphviz.ps1 -PathScope User
+```
+
+验证：
+
+```powershell
+where.exe dot
+dot -V
+```
 
 ## 安装依赖
 
@@ -55,3 +68,4 @@ python main.py
 - `outputs/decision_tree_confusion_matrix.png`
 
 `iris.data` 是项目中的原始参考数据文件，正式程序按题目约束使用 `sklearn` 内置数据集。
+
